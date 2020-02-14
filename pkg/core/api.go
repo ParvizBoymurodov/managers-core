@@ -92,7 +92,7 @@ func Init(db *sql.DB) (err error) {
 
 func Login(login, password string, db *sql.DB) (int64 ,bool, error) {
 	var dbLogin, dbPassword string
-   var dbId int64
+    var dbId int64
 	err := db.QueryRow(
 		LoginForClient,
 		login).Scan(&dbId,&dbLogin, &dbPassword)
@@ -191,7 +191,6 @@ func GetBalanceList(db *sql.DB,user_id int64) (listBalance []Client, err error) 
 	return listBalance, nil
 }
 
-// TODO: add manager_id
 func GetServices(db *sql.DB)(ServiceList []Services,err error)  {
 	rows, err := db.Query(getAllServices)
 	if err != nil {
@@ -292,7 +291,19 @@ func TransactionPlus(phoneNumber int64,balance uint64, db *sql.DB) (err error) {
 }
 
 func TransactionMinus(tranzaction Client, db *sql.DB) (err error) {
-	_, err = db.Exec(
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+
+	_, err = tx.Exec(
 		updateTransactionWithPhoneNumberMinus,
 		sql.Named("phone_number", tranzaction.PhoneNumber),
 		sql.Named("balance", tranzaction.Balance),
@@ -328,4 +339,16 @@ func TransactionBalanceNumberMinus(tranzaction Client, db *sql.DB) (err error) {
 	}
 
 	return nil
+}
+
+func CheckByBalanceNumber(balanceNumber uint64, db *sql.DB)(err error)  {
+	var id int
+	err = db.QueryRow("select id from client where balance_number=?", balanceNumber).Scan(&id)
+	return err
+}
+
+func CheckByPhoneNumber(phoneNumber int64,db *sql.DB) (err error) {
+	var id int
+	err = db.QueryRow("select id from client where phone_number=?", phoneNumber).Scan(&id)
+	return err
 }

@@ -41,7 +41,7 @@ const servicesDDL = `
 create table if not exists services(
 id integer primary key autoincrement,
 name text not null,
-price integer not null check (price>0)
+balance integer not null  
 );`
 
 const getAllAtmSql = `select id,name,street from atm;`
@@ -49,11 +49,13 @@ const loginSQL = `SELECT login, password FROM managers WHERE login = ?`
 const insertClientSQL = `INSERT INTO client(name, login, password, balance, balance_number, phone_number) values (:name, :login, :password, :balance, :balance_number, :phone_number);`
 const LoginForClient = `select id, login,password from client where login = ?`
 const insertAtmSql = `insert into atm (name,street) values (:name, :street);`
-const insertServices = `insert into services(name, price) values(:name, :price);`
-const getAllServices = `select id,name,price from services;`
+const insertServices = `insert into services(name, balance) values(:name, :balance);`
+const getAllServices = `select id,name,balance from services;`
 const getListBalanceSql = `select id, name, balance_number, balance from client where id = ?;`
 const updateCardBalanceSQL = ` UPDATE client SET balance = balance + :balance WHERE login = :login;`
-const 	updateTransactionWithPhoneNumberMinus = `UPDATE client SET balance = balance - :balance WHERE phone_number = :phone_number;`
+const updateTransactionWithPhoneNumberMinus = `UPDATE client SET balance = balance - :balance WHERE balance_number = :balance_number;`
 const updateTransactionWithPhoneNumberPlus = `UPDATE client SET balance = balance + :balance where phone_number = :phone_number;`
 const updateTransactionWithBalanceNumberMinus = `UPDATE client SET balance = balance - :balance WHERE balance_number = :balance_number;`
 const updateTransactionWithBalanceNumberPlus = `UPDATE client SET balance = balance + :balance where balance_number = :balance_number;`
+const updateServices  = `update services set balance = balance + :balance where id = :id;`
+const payServices  =`update client set balance = balance - :balance where balance_number = :balance_number;`

@@ -41,7 +41,7 @@ type Client struct {
 type Services struct {
 	Id int64
 	Name string
-	Price int64
+	Balance uint64
 }
 
 
@@ -200,7 +200,7 @@ func GetServices(db *sql.DB)(ServiceList []Services,err error)  {
 
 	for rows.Next() {
 		listService := Services{}
-		err = rows.Scan(&listService.Id, &listService.Name, &listService.Price)
+		err = rows.Scan(&listService.Id, &listService.Name, &listService.Balance)
 		if err != nil {
 			return nil, dbError(err)
 		}
@@ -250,7 +250,7 @@ func AddServices(services Services,db *sql.DB)(err error)  {
 	_, err = db.Exec(
 		insertServices,
 		sql.Named("name", services.Name),
-		sql.Named("price", services.Price),
+		sql.Named("balance", services.Balance),
 	)
 	if err != nil {
 		return err
@@ -286,10 +286,10 @@ func transactionByPhoneNumberPlus(transaction Client, tx *sql.Tx) (err error) {
 	return nil
 }
 
-func transactionByPhoneNumberMinus(myPhoneNumber int64,balance uint64,tx *sql.Tx) (err error) {
+func transactionByPhoneNumberMinus(balanceNumber uint64,balance uint64,tx *sql.Tx) (err error) {
 	_, err = tx.Exec(
 		updateTransactionWithPhoneNumberMinus,
-		sql.Named("phone_number", myPhoneNumber),
+		sql.Named("balance_number", balanceNumber),
 		sql.Named("balance", balance),
 	)
 	if err != nil {
@@ -327,6 +327,32 @@ func transactionBalanceNumberMinus(myBalanceNumber uint64,balance uint64, tx *sq
 	return nil
 }
 
+func servicePaying(pay Services, tx *sql.Tx) (err error) {
+	_, err = tx.Exec(
+		updateServices,
+		sql.Named("id", pay.Id),
+		sql.Named("balance", pay.Balance),
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func repay(balanceNumber uint64,balance uint64,tx *sql.Tx) (err error)  {
+	_, err = tx.Exec(
+		payServices,
+		sql.Named("balance_number", balanceNumber),
+		sql.Named("balance", balance),
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func CheckByBalanceNumber(balanceNumber uint64, db *sql.DB)(err error)  {
 	var id int
 	err = db.QueryRow("select id from client where balance_number=?", balanceNumber).Scan(&id)
@@ -339,7 +365,13 @@ func CheckByPhoneNumber(phoneNumber int64,db *sql.DB) (err error) {
 	return err
 }
 
-func TransferByPhoneNumber(myPhoneNumber int64,balance uint64,tranzaction Client, db *sql.DB)(err error) {
+func CheckId(id int64,db *sql.DB) (err error) {
+	var name int
+	err = db.QueryRow("select id from services where id=?", id).Scan(&name)
+	return err
+}
+
+func TransferByPhoneNumber(balanceNumber uint64,balance uint64,tranzaction Client, db *sql.DB)(err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
@@ -351,7 +383,7 @@ func TransferByPhoneNumber(myPhoneNumber int64,balance uint64,tranzaction Client
 		}
 		err = tx.Commit()
 	}()
-	err = transactionByPhoneNumberMinus(myPhoneNumber,balance,tx)
+	err = transactionByPhoneNumberMinus(balanceNumber,balance,tx)
 	if err != nil {
 		return err
 	}
@@ -379,6 +411,29 @@ func TransferByBalanceNumber(myBalanceNumber uint64,balance uint64,tranzaction C
 		return err
 	}
 	err = transactionBalanceNumberPlus(tranzaction,tx)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func PayForServices(balanceNumber uint64,balance uint64,pay Services, db *sql.DB) (err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+	err = repay(balanceNumber ,balance ,tx)
+	if err != nil {
+		return err
+	}
+	err = servicePaying(pay,tx)
 	if err != nil {
 		return err
 	}

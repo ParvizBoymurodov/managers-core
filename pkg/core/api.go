@@ -112,10 +112,6 @@ func Login(login, password string, db *sql.DB) (int64 ,bool, error) {
 	return dbId ,true, nil
 }
 
-//func queryData(db *sql.DB, query string, mapRow func(rows *sql.Rows)) {
-//	// mapping -> отображение одних данных в другие
-//	// map
-//}
 
 func LoginForManagers(login, password string, db *sql.DB) (bool, error) {
 	var dbLogin, dbPassword string
@@ -267,7 +263,7 @@ func UpdateBalance(listBalance Client,  db *sql.DB) (err error) {
 
 	_, err = db.Exec(
 		updateCardBalanceSQL,
-		sql.Named("id", listBalance.Id),
+		sql.Named("login", listBalance.Login),
 		sql.Named("balance", listBalance.Balance),
 	)
 	if err != nil {
@@ -277,22 +273,11 @@ func UpdateBalance(listBalance Client,  db *sql.DB) (err error) {
 	return nil
 }
 
-func TransactionPlus(phoneNumber int64,balance uint64, db *sql.DB) (err error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-		err = tx.Commit()
-	}()
+func transactionByPhoneNumberPlus(transaction Client, tx *sql.Tx) (err error) {
 	_, err = tx.Exec(
 		updateTransactionWithPhoneNumberPlus,
-		sql.Named("phone_number", phoneNumber),
-		sql.Named("balance", balance),
+		sql.Named("phone_number",transaction.PhoneNumber ),
+		sql.Named("balance", transaction.Balance ),
 	)
 	if err != nil {
 		return err
@@ -301,46 +286,10 @@ func TransactionPlus(phoneNumber int64,balance uint64, db *sql.DB) (err error) {
 	return nil
 }
 
-func TransactionMinus(tranzaction Client, db *sql.DB) (err error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-		err = tx.Commit()
-	}()
-
+func transactionByPhoneNumberMinus(myPhoneNumber int64,balance uint64,tx *sql.Tx) (err error) {
 	_, err = tx.Exec(
 		updateTransactionWithPhoneNumberMinus,
-		sql.Named("phone_number", tranzaction.PhoneNumber),
-		sql.Named("balance", tranzaction.Balance),
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func TransactionBalanceNumberPlus(balanceNumber uint64,balance uint64, db *sql.DB) (err error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-		err = tx.Commit()
-	}()
-	_, err = tx.Exec(
-		updateTransactionWithBalanceNumberPlus,
-		sql.Named("balance_number", balanceNumber),
+		sql.Named("phone_number", myPhoneNumber),
 		sql.Named("balance", balance),
 	)
 	if err != nil {
@@ -350,22 +299,26 @@ func TransactionBalanceNumberPlus(balanceNumber uint64,balance uint64, db *sql.D
 	return nil
 }
 
-func TransactionBalanceNumberMinus(tranzaction Client, db *sql.DB) (err error) {
-	tx, err := db.Begin()
+func transactionBalanceNumberPlus(transaction Client, tx *sql.Tx) (err error) {
+
+	_, err = tx.Exec(
+		updateTransactionWithBalanceNumberPlus,
+		sql.Named("balance_number", transaction.BalanceNumber),
+		sql.Named("balance", transaction.Balance),
+	)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback()
-			return
-		}
-		err = tx.Commit()
-	}()
+
+	return nil
+}
+
+func transactionBalanceNumberMinus(myBalanceNumber uint64,balance uint64, tx *sql.Tx) (err error) {
+
 	_, err = tx.Exec(
 		updateTransactionWithBalanceNumberMinus,
-		sql.Named("balance_number", tranzaction.BalanceNumber),
-		sql.Named("balance", tranzaction.Balance),
+		sql.Named("balance_number", myBalanceNumber),
+		sql.Named("balance", balance),
 	)
 	if err != nil {
 		return err
@@ -384,4 +337,50 @@ func CheckByPhoneNumber(phoneNumber int64,db *sql.DB) (err error) {
 	var id int
 	err = db.QueryRow("select id from client where phone_number=?", phoneNumber).Scan(&id)
 	return err
+}
+
+func TransferByPhoneNumber(myPhoneNumber int64,balance uint64,tranzaction Client, db *sql.DB)(err error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+	err = transactionByPhoneNumberMinus(myPhoneNumber,balance,tx)
+	if err != nil {
+		return err
+	}
+	err = transactionByPhoneNumberPlus(tranzaction,tx)
+	if err != nil {
+		return err
+	}
+  return nil
+}
+
+func TransferByBalanceNumber(myBalanceNumber uint64,balance uint64,tranzaction Client, db *sql.DB)(err error)  {
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+			return
+		}
+		err = tx.Commit()
+	}()
+	err = transactionBalanceNumberMinus(myBalanceNumber,balance,tx)
+	if err != nil {
+		return err
+	}
+	err = transactionBalanceNumberPlus(tranzaction,tx)
+	if err != nil {
+		return err
+	}
+	return nil
 }

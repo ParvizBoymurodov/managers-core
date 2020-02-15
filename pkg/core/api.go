@@ -2,8 +2,11 @@ package core
 
 import (
 	"database/sql"
+	"encoding/json"
+	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/ioutil"
 )
 
 var ErrInvalidPass = errors.New("invalid password")
@@ -25,7 +28,7 @@ type DbTxError struct {
 type Atm struct {
 	Id int64
 	Name string
-	Street string
+	Address string
 }
 
 type Client struct {
@@ -90,7 +93,7 @@ func Init(db *sql.DB) (err error) {
 	return nil
 }
 
-func Login(login, password string, db *sql.DB) (int64 ,bool, error) {
+func Login(login, password string, db *sql.DB) (int64,bool, error) {
 	var dbLogin, dbPassword string
     var dbId int64
 	err := db.QueryRow(
@@ -102,16 +105,15 @@ func Login(login, password string, db *sql.DB) (int64 ,bool, error) {
 			return -1, false, nil
 		}
 
-		return -1,false, queryError(LoginForClient, err)
+		return -1, false, queryError(LoginForClient, err)
 	}
 
 	if dbPassword != password {
-		return -1,false, ErrInvalidPass
+		return -1, false, ErrInvalidPass
 	}
 
-	return dbId ,true, nil
+	return dbId, true, nil
 }
-
 
 func LoginForManagers(login, password string, db *sql.DB) (bool, error) {
 	var dbLogin, dbPassword string
@@ -148,7 +150,7 @@ func GetAllAtms(db *sql.DB) (atms []Atm, err error) {
 
 	for rows.Next() {
 		atm := Atm{}
-		err = rows.Scan(&atm.Id, &atm.Name, &atm.Street)
+		err = rows.Scan(&atm.Id, &atm.Name, &atm.Address)
 		if err != nil {
 			return nil, dbError(err)
 		}
@@ -200,7 +202,7 @@ func GetServices(db *sql.DB)(ServiceList []Services,err error)  {
 
 	for rows.Next() {
 		listService := Services{}
-		err = rows.Scan(&listService.Id, &listService.Name, &listService.Balance)
+		err = rows.Scan(&listService.Id, &listService.Name)
 		if err != nil {
 			return nil, dbError(err)
 		}
@@ -236,7 +238,7 @@ func AddAtm (atm Atm, db *sql.DB)(err error){
 		_, err = db.Exec(
 			insertAtmSql,
 			sql.Named("name", atm.Name),
-			sql.Named("street", atm.Street),
+			sql.Named("street", atm.Address),
 		)
 		if err != nil {
 			return err
@@ -437,5 +439,238 @@ func PayForServices(balanceNumber uint64,balance uint64,pay Services, db *sql.DB
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+
+func ExportClientsToJSON(db *sql.DB) error {
+	return ExportToFile(db, getAllClientsDataSQL, "clients.json",
+		mapRowToClient, json.Marshal, mapInterfaceSliceToClients)
+}
+func ExportAtmsToJSON(db *sql.DB) error {
+	return ExportToFile(db, getAllAtmDataSQL, "atms.json",
+		mapRowToAtm, json.Marshal,
+		mapInterfaceSliceToAtms)
+}
+
+//XML
+
+func ExportClientsToXML(db *sql.DB) error {
+	return ExportToFile(db, getAllClientsDataSQL, "clients.xml",
+		mapRowToClient, xml.Marshal, mapInterfaceSliceToClients)
+}
+func ExportAtmsToXML(db *sql.DB) error {
+	return ExportToFile(db, getAllAtmDataSQL, "atms.xml",
+		mapRowToAtm, xml.Marshal,
+		mapInterfaceSliceToAtms)
+}
+
+func mapRowToClient(rows *sql.Rows) (interface{}, error) {
+	client := Client{}
+	err := rows.Scan(&client.Id, &client.Login, &client.Password,
+		&client.Name, &client.PhoneNumber, &client.Balance, &client.BalanceNumber)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+func mapRowToAtm(rows *sql.Rows) (interface{}, error) {
+	atm := Atm{}
+	err := rows.Scan(&atm.Id,&atm.Name, &atm.Address)
+	if err != nil {
+		return nil, err
+	}
+	return atm, nil
+}
+type ClientsExport struct {
+	Clients []Client
+}
+func mapInterfaceSliceToClients(ifaces []interface{}) interface{} {
+	clients := make([]Client, len(ifaces))
+	for i := range ifaces {
+		clients[i] = ifaces[i].(Client)
+	}
+	clientsExport := ClientsExport{Clients: clients}
+	return clientsExport
+}
+func mapInterfaceSliceToAtms(ifaces []interface{}) interface{} {
+	atms := make([]Atm, len(ifaces))
+	for i := range ifaces {
+		atms[i] = ifaces[i].(Atm)
+	}
+	atmsExport := AtmsExport{Atms: atms}
+	return atmsExport
+}
+func ImportClientsFromJSON(db *sql.DB) error {
+	return ImportFromFile(
+		db,
+		"clients.json",
+		func(data []byte) ([]interface{}, error) {
+			return mapBytesToClients(data, json.Unmarshal)
+		},
+		insertClientToDB,
+	)
+}
+func ImportAtmsFromJSON(db *sql.DB) error {
+	return ImportFromFile(
+		db,
+		"atms.json",
+		func(data []byte) ([]interface{}, error) {
+			return mapBytesToAtms(data, json.Unmarshal)
+		},
+		insertAtmToDB,
+	)
+}
+func ImportClientsFromXML(db *sql.DB) error {
+	return ImportFromFile(
+		db,
+		"clients.xml",
+		func(data []byte) ([]interface{}, error) {
+			return mapBytesToClients(data, xml.Unmarshal)
+		},
+		insertClientToDB,
+	)
+}
+func ImportAtmsFromXML(db *sql.DB) error {
+	return ImportFromFile(
+		db,
+		"atms.xml",
+		func(data []byte) ([]interface{}, error) {
+			return mapBytesToAtms(data, xml.Unmarshal)
+		},
+		insertAtmToDB,
+	)
+}
+func mapBytesToClients(data []byte,
+	unmarshal func([]byte, interface{}) error,
+) ([]interface{}, error) {
+	clientsExport := ClientsExport{}
+	err := unmarshal(data, &clientsExport)
+	if err != nil {
+		return nil, err
+	}
+	ifaces := make([]interface{}, len(clientsExport.Clients))
+	for index := range ifaces {
+		ifaces[index] = clientsExport.Clients[index]
+	}
+	return ifaces, nil
+}
+func insertClientToDB(iface interface{}, db *sql.DB) error {
+	client := iface.(Client)
+	_, err := db.Exec(
+		insertClientSQL,
+		sql.Named("id", client.Id),
+		sql.Named("name", client.Name),
+		sql.Named("login", client.Login),
+		sql.Named("password", client.Password),
+		sql.Named("phone", client.PhoneNumber),
+		sql.Named("balance_number", client.BalanceNumber),
+		sql.Named("balance", client.Balance),
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type ATM struct {
+	id int64
+	name string
+	address string
+}
+
+type AtmsExport struct {
+	Atms []Atm
+}
+
+
+
+func mapBytesToAtms(data []byte,
+	unmarshal func([]byte, interface{}) error,
+) ([]interface{}, error) {
+	atmsExport := AtmsExport{}
+	err := unmarshal(data, &atmsExport)
+	if err != nil {
+		return nil, err
+	}
+	ifaces := make([]interface{}, len(atmsExport.Atms))
+	for index := range ifaces {
+		ifaces[index] = atmsExport.Atms[index]
+	}
+	return ifaces, nil
+}
+func insertAtmToDB(iface interface{}, db *sql.DB) error {
+	atm := iface.(Atm)
+	_, err := db.Exec(
+		insertAtmSql,
+		sql.Named("id", atm.Id),
+		sql.Named("name", atm.Name),
+		sql.Named("street", atm.Address),
+	)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type MapperRowTo func(rows *sql.Rows) (interface{}, error)
+type MapperInterfaceSliceTo func([]interface{}) interface{}
+type Marshaller func(interface{}) ([]byte, error)
+
+func ExportToFile(
+	db *sql.DB,
+	getDataFromDbSQL string,
+	filename string,
+	mapRow MapperRowTo,
+	marshal Marshaller,
+	mapDataSlice MapperInterfaceSliceTo) error {
+
+	rows, err := db.Query(getDataFromDbSQL)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = rows.Close()
+	}()
+	var dataSlice []interface{}
+	for rows.Next() {
+		dataElement, err := mapRow(rows)
+		if err != nil {
+			return err
+		}
+		dataSlice = append(dataSlice, dataElement)
+	}
+	exportData := mapDataSlice(dataSlice)
+	data, err := marshal(exportData)
+	err = ioutil.WriteFile(filename, data, 0666)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+
+type MapperBytesTo func([]byte) ([]interface{}, error)
+
+func ImportFromFile(
+	db *sql.DB,
+	filename string,
+	mapBytes MapperBytesTo,
+	insertToDB func(interface{}, *sql.DB) error,
+) error {
+	itemsData, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return err
+	}
+
+	sliceData, err := mapBytes(itemsData)
+
+	for _, datum := range sliceData {
+		err = insertToDB(datum, db)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }

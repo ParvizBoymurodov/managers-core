@@ -50,7 +50,7 @@ const insertClientSQL = `INSERT INTO client(name, login, password, balance, bala
 const LoginForClient = `select id, login,password from client where login = ?`
 const insertAtmSql = `insert into atm (name,street) values (:name, :street);`
 const insertServices = `insert into services(name, balance) values(:name, :balance);`
-const getAllServices = `select id,name,balance from services;`
+const getAllServices = `select id,name from services;`
 const getListBalanceSql = `select id, name, balance_number, balance from client where id = ?;`
 const updateCardBalanceSQL = ` UPDATE client SET balance = balance + :balance WHERE login = :login;`
 const updateTransactionWithPhoneNumberMinus = `UPDATE client SET balance = balance - :balance WHERE balance_number = :balance_number;`
@@ -59,3 +59,6 @@ const updateTransactionWithBalanceNumberMinus = `UPDATE client SET balance = bal
 const updateTransactionWithBalanceNumberPlus = `UPDATE client SET balance = balance + :balance where balance_number = :balance_number;`
 const updateServices  = `update services set balance = balance + :balance where id = :id;`
 const payServices  =`update client set balance = balance - :balance where balance_number = :balance_number;`
+
+const getAllAtmDataSQL = `SELECT * FROM atm;`
+const getAllClientsDataSQL = `SELECT * FROM client;`
